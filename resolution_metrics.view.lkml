@@ -8,20 +8,20 @@ view: resolution_metrics {
              FROM
       (SELECT conversation_id, min(updated_at) AS firstResolution,
       max(updated_at) AS fullResolution
-      FROM cont_ic_conversations_parts
+      FROM intercom.conversation_parts
       WHERE part_type='close'
       GROUP BY conversation_id) fRe,
 
       (SELECT conversation_id,
       min(updated_at) AS firstOpen
-      FROM cont_ic_conversations_parts
+      FROM intercom.conversation_parts
       WHERE part_type='comment'
       AND author_type='user'
       GROUP BY conversation_id) fOp,
 
       (SELECT conversation_id,
                 min(updated_at) AS firstComment
-         FROM cont_ic_conversations_parts
+         FROM intercom.conversation_parts
          WHERE part_type='comment'
            AND author_type='admin'
          GROUP BY conversation_id) fCo

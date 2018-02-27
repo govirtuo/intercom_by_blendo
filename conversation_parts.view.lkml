@@ -1,5 +1,5 @@
 view: conversations_parts {
-  sql_table_name: public.cont_ic_conversations_parts;;
+  sql_table_name: intercom.conversation_parts;;
 
 
   dimension: id {

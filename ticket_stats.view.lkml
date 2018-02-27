@@ -9,7 +9,7 @@ view: ticket_stats {
       WHEN part_type ='close' THEN 1
       ELSE NULL
       END) AS close
-      FROM cont_ic_conversations_parts
+      FROM intercom.conversation_parts
       GROUP BY conversation_id
        ;;
   }

@@ -1,5 +1,5 @@
 view: admins {
-  sql_table_name: public.cont_ic_admins ;;
+  sql_table_name: intercom.admins ;;
 
   dimension: id {
     description: "Admin's unique identifier"

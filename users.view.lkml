@@ -1,5 +1,5 @@
 view: cont_ic_users {
-  sql_table_name: public.cont_ic_users ;;
+  sql_table_name: intercom.users ;;
 
   dimension: id {
     primary_key: yes
@@ -42,7 +42,7 @@ view: cont_ic_users {
 
   dimension: city {
     type: string
-    sql: ${TABLE}.custom_attributes_estado ;;
+    sql: ${TABLE}.location_city_name ;;
   }
 
   measure: count {

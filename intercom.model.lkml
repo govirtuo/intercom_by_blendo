@@ -1,4 +1,4 @@
-connection: "blendo_database"
+connection: "production"
 
 # include all the views
 include: "*.view"

@@ -1,5 +1,5 @@
 view: conversations {
-  sql_table_name: public.cont_ic_conversations ;;
+  sql_table_name: intercom.conversations ;;
 
   dimension: id {
     description: "Conversation unique identifier"
@@ -17,7 +17,7 @@ view: conversations {
   dimension: close{
     description: "Checks if a conversation is closed"
     type: yesno
-    sql: NOT ${TABLE}.open ;;
+    sql: NOT ${TABLE}._open ;;
   }
 
   dimension: read{

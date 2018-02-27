@@ -38,8 +38,8 @@
     show_totals_labels: false
     show_silhouette: false
     totals_color: "#808080"
-    row: 16
-    col: 0
+    row: 8
+    col: 12
     width: 12
     height: 8
   - name: Distibution of Assignment

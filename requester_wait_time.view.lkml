@@ -13,12 +13,12 @@ view: requester_wait_time {
            (SELECT tmp.adminTime AS ADMIN,
                    tmp.conversation_id AS id,
                    max(p.updated_at) AS USER
-            FROM cont_ic_conversations_parts AS p,
+            FROM intercom.conversation_parts AS p,
 
               (SELECT author_type,
                       updated_at AS adminTime,
                       conversation_id
-               FROM cont_ic_conversations_parts
+               FROM intercom.conversation_parts
                WHERE author_type='admin'
                  AND part_type ='comment') tmp
             WHERE tmp.conversation_id=p.conversation_id

@@ -14,7 +14,7 @@
       cont_ic_users.city: "-NULL"
     sorts:
     - cont_ic_users.count desc
-    limit: 500
+    limit: 50
     column_limit: 50
     value_labels: legend
     label_type: labPer
