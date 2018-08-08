@@ -45,10 +45,53 @@ view: conversations_parts {
   }
 
   dimension_group: updated {
-    description: "Upadate time"
+    description: "Update time"
     type: time
-    timeframes: [time, date, week, month, raw]
+    timeframes: [time, date, week, month, raw,day_of_week,hour_of_day]
     sql: ${TABLE}.updated_at;;
+  }
+
+  dimension: is_sc_answer {
+    description: "Message from SC"
+    type: yesno
+    sql: (${part_type}='comment' OR ${part_type}='assignment') AND ${body} is not null AND ${author_type}='admin' ;;
+  }
+
+  dimension: is_new_conversation {
+    description: "First message from client"
+    type: yesno
+    sql: (${part_type}='open') AND ${body} is not null AND ${author_type}='user' ;;
+    hidden: yes
+  }
+
+  dimension: is_sc_sollicitation {
+    description: "Sollicitation from SC"
+    type: yesno
+    sql: (${part_type}='open') AND ${body} is not null AND ${author_type}='admin' ;;
+  }
+
+  dimension: is_empty {
+    description: "Message is empty"
+    type: yesno
+    sql: ${body} is null ;;
+  }
+
+  dimension: is_inbound_call {
+    description: "Inbound call"
+    type: yesno
+    sql: (${part_type}='note') AND ${body}  like '<p>Caller%' ;;
+  }
+
+  dimension: is_infoge_call {
+    description: "Infos gés call"
+    type: yesno
+    sql: (${part_type}='note') AND ${body}  like '<p>Caller%' AND ${body}  like '%Infos générales%' ;;
+  }
+
+  dimension: is_missed_call {
+    description: "Missed call"
+    type: yesno
+    sql: (${part_type}='note') AND ${body}  like '<p>Caller%' AND  ${body}  not like '%<br> Answered%'  ;;
   }
 
   measure: count {
