@@ -1,8 +1,9 @@
 view: conversations_parts {
   derived_table: {
     sql:  with ic1 as (select *, ROW_NUMBER() OVER(PARTITION BY conversation_id ORDER BY updated_at) as sequence_number from intercom.conversation_parts),
-          ic2 as (select conversation_id, id, author_type, updated_at, ROW_NUMBER() OVER(PARTITION BY conversation_id ORDER BY updated_at) as sequence_number from intercom.conversation_parts)
-          select ic1.*, ic2.id as previous_message, ic2.updated_at as previous_message_time, ic2.author_type as previous_author from ic1 left join ic2 on ic1.conversation_id=ic2.conversation_id and ic1.sequence_number=ic2.sequence_number+1 ;;
+          ic2 as (select conversation_id, id, author_type, updated_at, ROW_NUMBER() OVER(PARTITION BY conversation_id ORDER BY updated_at) as sequence_number from intercom.conversation_parts),
+          icfa as (select conversation_id, min(case when author_type='admin' then updated_at else null end) as first_answer, min(updated_at) as beginning from intercom.conversation_parts  group by conversation_id)
+          select ic1.*, ic2.id as previous_message, ic2.updated_at as previous_message_time, ic2.author_type as previous_author, icfa.first_answer, icfa.beginning  from ic1 left join ic2 on ic1.conversation_id=ic2.conversation_id and ic1.sequence_number=ic2.sequence_number+1 left join icfa on ic1.conversation_id=icfa.conversation_id ;;
     }
 
 
@@ -85,6 +86,22 @@ view: conversations_parts {
     hidden: yes
   }
 
+  dimension_group: first_answer {
+    description: "First answer"
+    type: time
+    timeframes: [time, date, week, month, raw,day_of_week,hour_of_day]
+    sql: ${TABLE}.first_answer;;
+    hidden: yes
+  }
+
+  dimension_group: beginning {
+    description: "First answer"
+    type: time
+    timeframes: [time, date, week, month, raw,day_of_week,hour_of_day]
+    sql: ${TABLE}.beginning;;
+    hidden: yes
+  }
+
   dimension: delay {
     description: "Delay"
     type: number
@@ -94,20 +111,42 @@ view: conversations_parts {
           DATE_PART('second', ${updated_raw} - ${updated_previous_raw} )/60 ;;
   }
 
+  dimension: conversation_delay {
+    view_label: "Conversations"
+    description: "Delay of first answer"
+    type: number
+    value_format_name: decimal_1
+    sql:  DATE_PART('hour', ${first_answer_raw} - ${beginning_raw} ) * 60 +
+          DATE_PART('minute', ${first_answer_raw} - ${beginning_raw} ) +
+          DATE_PART('second', ${first_answer_raw} - ${beginning_raw} )/60 ;;
+    required_fields: [is_new_conversation]
+  }
+
+
 
   dimension: is_sc_answer {
+    group_label: "Type of message"
     description: "Message from SC"
     type: yesno
     sql: (${part_type}='comment' OR ${part_type}='assignment') AND ${body} is not null AND ${author_type}='admin' AND (${previous_author}='user' OR ${sequence_number}=2);;
   }
 
+  dimension: is_user_message {
+    group_label: "Type of message"
+    description: "Message from client"
+    type: yesno
+    sql: (${part_type}='comment' OR ${part_type}='assignment') AND ${body} is not null AND ${author_type}='user';;
+  }
+
   dimension: is_new_conversation {
+    group_label: "Type of message"
     description: "First message from client"
     type: yesno
-    sql: (${part_type}='assignment') AND ${sequence_number}=1 ;;
+    sql: ((${part_type}='assignment' AND ${author_type}='bot') OR (${author_type}='user' AND ${is_empty} is false))  AND ${sequence_number}=1 ;;
   }
 
   dimension: is_sc_sollicitation {
+    group_label: "Type of message"
     description: "Sollicitation from SC"
     type: yesno
     sql: (${part_type}='open') AND ${body} is not null AND ${author_type}='admin' ;;
@@ -120,18 +159,21 @@ view: conversations_parts {
   }
 
   dimension: is_inbound_call {
+    group_label: "Type of call"
     description: "Inbound call"
     type: yesno
     sql: (${part_type}='note') AND ${body}  like '<p>Caller%' ;;
   }
 
   dimension: is_infoge_call {
+    group_label: "Type of call"
     description: "Infos gés call"
     type: yesno
     sql: (${part_type}='note') AND ${body}  like '<p>Caller%' AND ${body}  like '%Infos générales%' ;;
   }
 
   dimension: is_missed_call {
+    group_label: "Type of call"
     description: "Missed call"
     type: yesno
     sql: (${part_type}='note') AND ${body}  like '<p>Caller%' AND  ${body}  not like '%<br> Answered%'  ;;
