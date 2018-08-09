@@ -1,8 +1,8 @@
 view: conversations_parts {
   derived_table: {
     sql:  with ic1 as (select *, ROW_NUMBER() OVER(PARTITION BY conversation_id ORDER BY updated_at) as sequence_number from intercom.conversation_parts),
-          ic2 as (select conversation_id, id, updated_at, ROW_NUMBER() OVER(PARTITION BY conversation_id ORDER BY updated_at) as sequence_number from intercom.conversation_parts)
-          select ic1.*, ic2.id as previous_message, ic2.updated_at as previous_message_time from ic1 left join ic2 on ic1.conversation_id=ic2.conversation_id and ic1.sequence_number=ic2.sequence_number+1 ;;
+          ic2 as (select conversation_id, id, author_type, updated_at, ROW_NUMBER() OVER(PARTITION BY conversation_id ORDER BY updated_at) as sequence_number from intercom.conversation_parts)
+          select ic1.*, ic2.id as previous_message, ic2.updated_at as previous_message_time, ic2.author_type as previous_author from ic1 left join ic2 on ic1.conversation_id=ic2.conversation_id and ic1.sequence_number=ic2.sequence_number+1 ;;
     }
 
 
@@ -42,6 +42,13 @@ view: conversations_parts {
     type: string
     sql: ${TABLE}.author_type ;;
   }
+
+  dimension: previous_author {
+    type: string
+    hidden: yes
+    sql: ${TABLE}.previous_author ;;
+  }
+
 
   dimension: part_type {
     description: "Part type, i.e Comment, Close, Note, Assignment"
@@ -91,7 +98,7 @@ view: conversations_parts {
   dimension: is_sc_answer {
     description: "Message from SC"
     type: yesno
-    sql: (${part_type}='comment' OR ${part_type}='assignment') AND ${body} is not null AND ${author_type}='admin' ;;
+    sql: (${part_type}='comment' OR ${part_type}='assignment') AND ${body} is not null AND ${author_type}='admin' AND (${previous_author}='user' OR ${sequence_number}=2);;
   }
 
   dimension: is_new_conversation {
@@ -139,6 +146,18 @@ view: conversations_parts {
     description: "Calculates a cell’s portion of the column total. The percentage is being calculated against the total of the displayed rows"
     type: percent_of_total
     sql: ${count} ;;
+  }
+
+  measure: average_delay {
+    description: "Average answer delay"
+    type: average
+    sql: ${delay} ;;
+  }
+
+  measure: median_delay {
+    description: "Median answer delay"
+    type: median
+    sql: ${delay} ;;
   }
 
 }
