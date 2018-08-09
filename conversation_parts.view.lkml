@@ -288,6 +288,10 @@ view: conversations_parts {
 
   measure: count_inbound_conversations {
     type: count
+    filters: {
+      field: is_user_message
+      value: "true"
+    }
     drill_fields: [updated_time, count]
   }
 
