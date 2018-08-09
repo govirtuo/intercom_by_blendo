@@ -1,11 +1,49 @@
 view: conversations_parts {
   derived_table: {
-    sql:  with ic1 as (select *, ROW_NUMBER() OVER(PARTITION BY conversation_id ORDER BY updated_at) as sequence_number from intercom.conversation_parts),
-          ic2 as (select conversation_id, id, author_type, updated_at, ROW_NUMBER() OVER(PARTITION BY conversation_id ORDER BY updated_at) as sequence_number from intercom.conversation_parts),
-          icfa as (select conversation_id, min(case when author_type='admin' then updated_at else null end) as first_answer, min(updated_at) as beginning from intercom.conversation_parts  group by conversation_id)
-          select ic1.*, ic2.id as previous_message, ic2.updated_at as previous_message_time, ic2.author_type as previous_author, icfa.first_answer, icfa.beginning  from ic1 left join ic2 on ic1.conversation_id=ic2.conversation_id and ic1.sequence_number=ic2.sequence_number+1 left join icfa on ic1.conversation_id=icfa.conversation_id ;;
+    sql:  with ic1 as
+              (select *,
+                      ROW_NUMBER() OVER(PARTITION BY conversation_id ORDER BY updated_at) as sequence_number
+              from intercom.conversation_parts),
+          ic2 as
+              (select conversation_id,
+                      id,
+                      author_type,
+                      updated_at,
+                      part_type,
+                      ROW_NUMBER() OVER(PARTITION BY conversation_id ORDER BY updated_at) as sequence_number
+              from intercom.conversation_parts),
+          ic4t as
+              (select conversation_id,
+                      id,
+                      author_type,
+                      part_type,
+                      updated_at,
+                      body,
+                      ROW_NUMBER() OVER(PARTITION BY conversation_id ORDER BY updated_at) as sequence_number
+              from intercom.conversation_parts),
+          icfa as
+              (select conversation_id,
+                      min(case when author_type='admin' AND (part_type='comment' OR part_type='assignment') then updated_at else null end) as first_answer,
+                      min(updated_at) as beginning
+              from intercom.conversation_parts
+              group by conversation_id)
+          select ic1.*,
+                  ic2.id as previous_message,
+                  ic4t.id as fourth_message,
+                  ic4t.updated_at as fourth_message_time,
+                  ic2.updated_at as previous_message_time,
+                  ic2.author_type as previous_author,
+                  icfa.first_answer, icfa.beginning,
+                  ic4t.part_type as fourth_message_type,
+                  ic4t.body as fourth_message_body
+          from ic1
+          left join ic2
+            on ic1.conversation_id=ic2.conversation_id and ic1.sequence_number=ic2.sequence_number+1
+          left join ic4t
+            on ic1.conversation_id=ic4t.conversation_id and ic1.sequence_number=ic4t.sequence_number-3
+          left join icfa
+            on ic1.conversation_id=icfa.conversation_id ;;
     }
-
 
   dimension: id {
     primary_key: yes
@@ -94,6 +132,15 @@ view: conversations_parts {
     hidden: yes
   }
 
+  dimension_group: fourth_message {
+    description: "Fourth answer"
+    type: time
+    timeframes: [time, date, week, month, raw,day_of_week,hour_of_day]
+    sql: ${TABLE}.fourth_message_time;;
+    hidden: yes
+  }
+
+
   dimension_group: beginning {
     description: "First answer"
     type: time
@@ -111,6 +158,18 @@ view: conversations_parts {
           DATE_PART('second', ${updated_raw} - ${updated_previous_raw} )/60 ;;
   }
 
+  dimension: call_duration {
+    group_label: "Call informations"
+    description: "Call duration"
+    type: number
+    value_format_name: decimal_1
+    sql:  case when ${is_inbound_call} is true then
+          DATE_PART('hour', ${fourth_message_raw} - ${updated_raw} ) * 60 +
+          DATE_PART('minute', ${fourth_message_raw} - ${updated_raw} ) +
+          DATE_PART('second', ${fourth_message_raw} - ${updated_raw} )/60
+          else null end ;;
+  }
+
   dimension: conversation_delay {
     view_label: "Conversations"
     description: "Delay of first answer"
@@ -119,7 +178,6 @@ view: conversations_parts {
     sql:  DATE_PART('hour', ${first_answer_raw} - ${beginning_raw} ) * 60 +
           DATE_PART('minute', ${first_answer_raw} - ${beginning_raw} ) +
           DATE_PART('second', ${first_answer_raw} - ${beginning_raw} )/60 ;;
-    required_fields: [is_new_conversation]
   }
 
 
@@ -179,26 +237,121 @@ view: conversations_parts {
     sql: (${part_type}='note') AND ${body}  like '<p>Caller%' AND  ${body}  not like '%<br> Answered%'  ;;
   }
 
+  dimension: call_informations {
+    group_label: "Call informations"
+    description: "Call informations"
+    type: yesno
+    sql: (${part_type}='note') AND ${body}  like '<p>Duration of call : %' ;;
+    hidden: yes
+  }
+
+  dimension: waiting_duration_string {
+    type: string
+    sql: substring(${body},position('Waiting time : ' in ${body}),23);;
+    hidden: yes
+  }
+
+  dimension: waiting_duration {
+    group_label: "Call informations"
+    description: "Waiting duration"
+    type: number
+    value_format_name: decimal_1
+    sql:case when ${is_inbound_call}=true then
+        cast(substring(${waiting_duration_string}, 15, 2) as real)*60
+        +cast(substring(${waiting_duration_string}, 19, 2) as real)
+        +cast(substring(${waiting_duration_string}, 22, 2) as real)/60
+        else null end;;
+  }
+
+## Measures
+
   measure: count {
     type: count
-    drill_fields: [updated_month, count]
+    drill_fields: [updated_time, count]
   }
+
+  measure: count_conversations {
+    type: count_distinct
+    sql: ${conversation_id} ;;
+    drill_fields: [updated_time, count]
+  }
+
+
+  measure: count_SC_messages {
+    type: count
+    filters: {
+      field: is_sc_answer
+      value: "true"
+    }
+    drill_fields: [updated_time, count]
+  }
+
+  measure: count_inbound_conversations {
+    type: count
+    drill_fields: [updated_time, count]
+  }
+
+
+
 
   measure: percent_of_tickets{
     description: "Calculates a cell’s portion of the column total. The percentage is being calculated against the total of the displayed rows"
     type: percent_of_total
     sql: ${count} ;;
+    hidden: yes
   }
 
   measure: average_delay {
     description: "Average answer delay"
     type: average
+    value_format_name: decimal_1
     sql: ${delay} ;;
   }
 
   measure: median_delay {
     description: "Median answer delay"
     type: median
+    value_format_name: decimal_1
+    sql: ${delay} ;;
+  }
+
+  measure: median_first_answer {
+    description: "Median delay in first answer"
+    type: median
+    value_format_name: decimal_1
+    sql: ${conversation_delay} ;;
+  }
+
+
+  measure: median_call {
+    description: "Median call duration"
+    type: median
+    value_format_name: decimal_1
+    sql: ${call_duration} ;;
+  }
+
+  measure: total_call_duration {
+    description: "Total call duration"
+    type: sum
+    value_format_name: decimal_0
+    sql: ${call_duration} ;;
+  }
+
+  measure: median_call_waiting {
+    description: "Median call duration"
+    type: median
+    value_format_name: decimal_1
+    sql: ${waiting_duration} ;;
+  }
+
+  measure: median_SC_answer {
+    description: "Median SC answer"
+    type: median
+    filters: {
+      field: is_sc_answer
+      value: "true"
+    }
+    value_format_name: decimal_1
     sql: ${delay} ;;
   }
 
