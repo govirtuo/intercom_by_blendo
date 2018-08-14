@@ -18,6 +18,11 @@ explore: conversations_parts {
     sql_on: ${conversations.id} = ${conversations_parts.conversation_id} ;;
     relationship: many_to_one
   }
+  join: cont_ic_users {
+    type: left_outer
+    sql_on: ${conversations.user_id} = ${cont_ic_users.id} ;;
+    relationship: many_to_many
+  }
   join: ticket_stats {
     type: left_outer
     sql_on:${ticket_stats.conversation_id}=${conversations.id}  ;;
@@ -27,6 +32,13 @@ explore: conversations_parts {
     type: left_outer
     sql_on: ${conversations_parts.conversation_id} = ${resolution_metrics.conversation_id};;
     relationship: many_to_one
+  }
+  join: tags {
+    type: left_outer
+    sql_on: ${tags.id} = ${conversations.tags} ;;
+    #NBED review join so that all tags included in a conversation can be explored in the tags table
+    # and not only the conversations with one tag only
+    relationship: many_to_many
   }
 
   join: requester_wait_time {
@@ -38,4 +50,8 @@ explore: conversations_parts {
 
 explore: cont_ic_users {
   label: "Users"
+}
+
+explore: tags {
+  label: "Tags"
 }

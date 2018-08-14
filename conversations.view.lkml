@@ -8,6 +8,12 @@ view: conversations {
     sql: ${TABLE}.id ;;
   }
 
+  dimension: user_id {
+    description: "User identifier"
+    type: string
+    sql: ${TABLE}.user_id ;;
+  }
+
   measure: tickets_cnt {
     description: "Total Number of conversation"
     type:  count_distinct
@@ -24,6 +30,12 @@ view: conversations {
     description: "Check if a conversation is read"
     type: yesno
     sql: NOT ${TABLE}.read ;;
+  }
+
+  dimension: tags {
+    description: "Tags attached to the conversation"
+    type: string
+    sql: ${TABLE}.tags ;;
   }
 
   measure: percent_of_tickets{

@@ -45,6 +45,11 @@ view: cont_ic_users {
     sql: ${TABLE}.location_city_name ;;
   }
 
+  dimension: country {
+    type: string
+    sql: ${TABLE}.location_country_code ;;
+  }
+
   measure: count {
     type:  count
   }
