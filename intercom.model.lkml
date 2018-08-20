@@ -15,7 +15,7 @@ explore: conversations_parts {
   }
   join: conversations {
     type: left_outer
-    sql_on: ${conversations.id} = ${conversations_parts.conversation_id} ;;
+    sql_on: ${conversations_parts.conversation_id} = ${conversations.id};;
     relationship: many_to_one
   }
   join: cont_ic_users {
