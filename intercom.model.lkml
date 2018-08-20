@@ -21,7 +21,7 @@ explore: conversations_parts {
   join: cont_ic_users {
     type: left_outer
     sql_on: ${conversations.user_id} = ${cont_ic_users.id} ;;
-    relationship: many_to_many
+    relationship: many_to_one
   }
   join: ticket_stats {
     type: left_outer
