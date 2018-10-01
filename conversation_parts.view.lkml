@@ -1,34 +1,60 @@
 view: conversations_parts {
   derived_table: {
-    sql:  with ic1 as
+    sql:  with ic as (
+            select a.*,b.user_id from intercom.conversation_parts a, intercom.conversations b where b.id=a.conversation_id
+            UNION
+            select
+              id,
+              received_at,
+              uuid_ts,
+              assignee_id as assigned_to_id,
+              assignee_type as assigned_to_type,
+              message_author_id as "author_id",
+              message_author_type as "author_type",
+              message_body as body,
+              id as "conversation_id",
+              created_at,
+              created_at as notified_at,
+              'first' as part_type,
+              created_at as updated_at,
+              user_id
+            from intercom.conversations
+          ),
+
+          ic1 as
               (select *,
-                      ROW_NUMBER() OVER(PARTITION BY conversation_id ORDER BY updated_at) as sequence_number
-              from intercom.conversation_parts),
-          ic2 as
+                      ROW_NUMBER() OVER(PARTITION BY user_id, date(updated_at) ORDER BY updated_at) as sequence_number,
+                      user_id || date(updated_at) as alt_id
+              from ic),
+          ic2 as -- same table, for previous messages
               (select conversation_id,
+                      user_id || date(updated_at) as alt_id,
                       id,
                       author_type,
                       updated_at,
                       part_type,
-                      ROW_NUMBER() OVER(PARTITION BY conversation_id ORDER BY updated_at) as sequence_number
-              from intercom.conversation_parts),
-          ic4t as
+                      body,
+                      ROW_NUMBER() OVER(PARTITION BY user_id, date(updated_at)  ORDER BY updated_at) as sequence_number
+              from ic),
+          ic4t as  -- same table, for the fourth message (useful in case of calls)
               (select conversation_id,
+                      user_id || date(updated_at) as alt_id,
                       id,
                       author_type,
                       part_type,
                       updated_at,
                       body,
-                      ROW_NUMBER() OVER(PARTITION BY conversation_id ORDER BY updated_at) as sequence_number
-              from intercom.conversation_parts),
-          icfa as
-              (select conversation_id,
-                      min(case when author_type='admin' AND (part_type='comment' OR part_type='assignment') then updated_at else null end) as first_answer,
-                      min(updated_at) as beginning
-              from intercom.conversation_parts
-              group by conversation_id)
+                      ROW_NUMBER() OVER(PARTITION BY user_id, date(updated_at) ORDER BY updated_at) as sequence_number
+              from ic),
+          icfa as --first message of the conversation
+              (select user_id || date(updated_at) as alt_id,
+                      min(case when (author_type='admin' AND (part_type='comment' OR part_type='assignment') AND body is not null) OR (part_type='first' AND body like '%Outbout%') then updated_at else null end) as first_answer,
+                      min(case when body is not null and author_type='user' then updated_at else null end) as beginning
+              from ic
+              group by user_id, date(updated_at))
           select ic1.*,
                   ic2.id as previous_message,
+                  ic2.body as previous_body,
                   ic4t.id as fourth_message,
                   ic4t.updated_at as fourth_message_time,
                   ic2.updated_at as previous_message_time,
@@ -42,7 +68,7 @@ view: conversations_parts {
           left join ic4t
             on ic1.conversation_id=ic4t.conversation_id and ic1.sequence_number=ic4t.sequence_number-3
           left join icfa
-            on ic1.conversation_id=icfa.conversation_id ;;
+            on ic1.alt_id=icfa.alt_id ;;
     }
 
   dimension: id {
@@ -68,13 +94,25 @@ view: conversations_parts {
     description: "Sequence number"
     type: number
     sql: ${TABLE}.sequence_number ;;
-    hidden: yes
+    hidden: no
   }
 
   dimension: author_id {
     description: "Unique identifier of the author"
     type: string
     sql: ${TABLE}.author_id ;;
+  }
+
+  dimension: user_id {
+    description: "Unique identifier of the user (customer) of the conversation"
+    type: string
+    sql: ${TABLE}.user_id ;;
+  }
+
+  dimension: alt_id {
+    description: "User_id || date"
+    type: string
+    sql: ${TABLE}.alt_id ;;
   }
 
   dimension: author_type {
@@ -101,13 +139,18 @@ view: conversations_parts {
     sql: ${TABLE}.body ;;
   }
 
+  dimension: previous_body {
+    description: "Message body of the previous message"
+    type: string
+    sql: ${TABLE}.previous_body ;;
+    hidden: yes
+  }
+
   dimension: conversation_id {
     description: "Unique identifier of the related conversation"
     type: string
     sql: ${TABLE}.conversation_id ;;
   }
-
-
 
   dimension_group: updated {
     description: "Update time"
@@ -140,6 +183,28 @@ view: conversations_parts {
     hidden: yes
   }
 
+  dimension: is_welcome_previous {
+    description: "Is previous message the automatic welcome"
+    type: yesno
+    sql: ${previous_body} like '%<p>N''hésitez pas à nous contacter ici si vous avez des questions :-)</p>'
+        OR ${previous_body} like '%n’hésitez pas à nous contacter ici si vous avez la moindre question ! <br></p>'
+        OR ${previous_body} like '%<p>If you’ve got any questions or feedback while you’re getting started, let me know :-)</p>%'
+        OR ${previous_body} like '%feel free to get in touch if you have any questions! <br></p>' ;;
+    hidden: yes
+  }
+
+  dimension: is_welcome {
+    description: "Is previous message the automatic welcome"
+    type: yesno
+    sql: ${sequence_number}=1 AND
+        (${body} like '%<p>N''hésitez pas à nous contacter ici si vous avez des questions :-)</p>'
+        OR ${body} like '%n’hésitez pas à nous contacter ici si vous avez la moindre question ! <br></p>'
+        OR ${body} like '%<p>If you’ve got any questions or feedback while you’re getting started, let me know :-)</p>%'
+        OR ${body} like '%feel free to get in touch if you have any questions! <br></p>') ;;
+    hidden: yes
+  }
+
+
 
   dimension_group: beginning {
     description: "First answer"
@@ -158,15 +223,29 @@ view: conversations_parts {
           DATE_PART('second', ${updated_raw} - ${updated_previous_raw} )/60 ;;
   }
 
+  dimension: call_duration_interim {
+    group_label: "Call informations"
+    description: "Call duration interim"
+    hidden: no
+    type: string
+    sql: case when position('Duration' in ${body})=0
+    then null else substring(${body}, position('Duration' in ${body})+10,5) end  ;;
+  }
+
   dimension: call_duration {
     group_label: "Call informations"
     description: "Call duration"
     type: number
     value_format_name: decimal_1
-    sql:  case when ${is_inbound_call} is true then
-          DATE_PART('hour', ${fourth_message_raw} - ${updated_raw} ) * 60 +
-          DATE_PART('minute', ${fourth_message_raw} - ${updated_raw} ) +
-          DATE_PART('second', ${fourth_message_raw} - ${updated_raw} )/60
+    sql:  case
+          when ${is_inbound_call} is true and ${part_type}='note' and (${is_missed_call} is false) THEN
+            DATE_PART('hour', ${fourth_message_raw} - ${updated_raw})*60 +
+            DATE_PART('minute', ${fourth_message_raw} - ${updated_raw}) +
+            DATE_PART('second', ${fourth_message_raw} - ${updated_raw})/60
+          when ${is_inbound_call} is true and ${part_type}='first' and ${is_missed_call} is false
+            THEN cast(substring(${call_duration_interim},1,2) as real)+cast(substring(${call_duration_interim},4,2) as real)/60
+          when ${is_outbound_call} is true and ${part_type}='first' --and ${is_answered} is true (in case of unanswered calls to clients, call duration is also counted)
+            THEN cast(substring(${call_duration_interim},1,2) as real)+cast(substring(${call_duration_interim},position(':' in ${call_duration_interim})+1,2) as real)/60
           else null end ;;
   }
 
@@ -189,25 +268,32 @@ view: conversations_parts {
     sql: (${part_type}='comment' OR ${part_type}='assignment') AND ${body} is not null AND ${author_type}='admin' AND (${previous_author}='user' OR ${sequence_number}=2);;
   }
 
+  dimension: is_sc_message {
+    group_label: "Type of message"
+    description: "Message from SC"
+    type: yesno
+    sql: (${part_type}='comment' OR ${part_type}='assignment') AND ${body} is not null AND ${author_type}='admin' ;;
+  }
+
   dimension: is_user_message {
     group_label: "Type of message"
     description: "Message from client"
     type: yesno
-    sql: (${part_type}='comment' OR ${part_type}='assignment') AND ${body} is not null AND ${author_type}='user';;
+    sql: (${part_type}='comment' OR ${part_type}='assignment' OR ${part_type}='first') AND ${body} is not null AND ${is_outbound_call} is false AND ${author_type}='user';;
   }
 
   dimension: is_new_conversation {
     group_label: "Type of message"
     description: "First message from client"
     type: yesno
-    sql: ((${part_type}='assignment' AND ${author_type}='bot') OR (${author_type}='user' AND ${is_empty} is false))  AND ${sequence_number}=1 ;;
+    sql: ${author_type}='user' AND ${is_outbound_call} is false AND ${is_empty} is false  AND (${sequence_number}=1 OR (${sequence_number}=2 and ${is_welcome_previous} is true)) ;;
   }
 
   dimension: is_sc_sollicitation {
     group_label: "Type of message"
     description: "Sollicitation from SC"
     type: yesno
-    sql: (${part_type}='open') AND ${body} is not null AND ${author_type}='admin' ;;
+    sql: (${part_type}='open' or ${part_type}='first') AND ${body} is not null AND ${author_type}='admin' and ${is_welcome} is false ;;
   }
 
   dimension: is_empty {
@@ -220,21 +306,57 @@ view: conversations_parts {
     group_label: "Type of call"
     description: "Inbound call"
     type: yesno
-    sql: (${part_type}='note') AND ${body}  like '<p>Caller%' ;;
+    sql:  (
+          (${part_type}='note')
+          AND ${body}  like '<p>Caller%'
+          )
+        OR
+          (${part_type}='first'
+          AND
+          (${body} like '%Inbound call%' OR ${body} like '%Inbound answered call%')
+          );;
+  }
+
+  dimension: is_outbound_call {
+    group_label: "Type of call"
+    description: "Inbound call"
+    type: yesno
+    sql: ${part_type}='first' AND (${body} like '%Outbound call%' OR ${body} like '%Outbound answered call%' OR ${body} like '%Outbound unanswered call%') ;;
   }
 
   dimension: is_infoge_call {
     group_label: "Type of call"
     description: "Infos gés call"
     type: yesno
-    sql: (${part_type}='note') AND ${body}  like '<p>Caller%' AND ${body}  like '%Infos générales%' ;;
+    sql: ${is_inbound_call} AND ${body}  like '%Infos générales%' ;;
   }
 
   dimension: is_missed_call {
     group_label: "Type of call"
     description: "Missed call"
     type: yesno
-    sql: (${part_type}='note') AND ${body}  like '<p>Caller%' AND  ${body}  not like '%<br> Answered%'  ;;
+    sql: ${is_inbound_call} AND
+          (
+            (${body} not like '%Answered by%' AND ${part_type}='note')
+            OR
+            (${body} like '%(missed)%' AND ${part_type}='first')
+          ) ;;
+  }
+
+  dimension: is_answered {
+    group_label: "Type of call"
+    description: "Call answered by the client"
+    type: yesno
+    sql: ${is_outbound_call} AND (${body} like '% answered%' OR ${body} like '%(answered)%') ;;
+  }
+
+  dimension: is_true_call {
+    group_label: "Type of call"
+    description: "Call answered by any of the two parties"
+    type: yesno
+    sql: (${is_inbound_call} AND NOT ${is_missed_call})
+          OR
+          (${is_outbound_call} AND NOT ${is_answered}) ;;
   }
 
   dimension: call_informations {
@@ -256,11 +378,12 @@ view: conversations_parts {
     description: "Waiting duration"
     type: number
     value_format_name: decimal_1
-    sql:case when ${is_inbound_call}=true then
-        cast(substring(${waiting_duration_string}, 15, 2) as real)*60
-        +cast(substring(${waiting_duration_string}, 19, 2) as real)
-        +cast(substring(${waiting_duration_string}, 22, 2) as real)/60
-        else null end;;
+    sql:case
+          when ${is_inbound_call}=true and ${part_type}='note' then
+            cast(substring(${waiting_duration_string}, 15, 2) as real)*60
+            +cast(substring(${waiting_duration_string}, 19, 2) as real)
+            +cast(substring(${waiting_duration_string}, 22, 2) as real)/60
+          null end;;
   }
 
 ## Measures
@@ -272,21 +395,31 @@ view: conversations_parts {
 
   measure: count_conversations {
     type: count_distinct
-    sql: ${conversation_id} ;;
+    sql: ${alt_id} ;;
     drill_fields: [updated_time, count]
+  }
+
+  measure: count_distinct_callers {
+    group_label: "Count calls"
+    type: count_distinct
+    sql: case when ${is_inbound_call} or ${is_outbound_call} then ${user_id} else null end ;;
+  }
+
+  measure: count_distinct_calls {
+    group_label: "Count calls"
+    type: count_distinct
+    sql: case when ${is_inbound_call} or ${is_outbound_call} then ${conversation_id} else null end ;;
+    # NB : un call en réponse apparaît dans une nouvelle conversation
   }
 
 
   measure: count_SC_messages {
-    type: count
-    filters: {
-      field: is_sc_answer
-      value: "true"
-    }
+    type: count_distinct
+    sql: case when ${is_sc_message} then ${id} else null end ;;
     drill_fields: [updated_time, count]
   }
 
-  measure: count_inbound_conversations {
+  measure: count_inbound_messages {
     type: count
     filters: {
       field: is_user_message
@@ -294,9 +427,6 @@ view: conversations_parts {
     }
     drill_fields: [updated_time, count]
   }
-
-
-
 
   measure: percent_of_tickets{
     description: "Calculates a cell’s portion of the column total. The percentage is being calculated against the total of the displayed rows"
@@ -306,6 +436,7 @@ view: conversations_parts {
   }
 
   measure: average_delay {
+    group_label: "Answer delay"
     description: "Average answer delay"
     type: average
     value_format_name: decimal_1
@@ -313,6 +444,7 @@ view: conversations_parts {
   }
 
   measure: median_delay {
+    group_label: "Answer delay"
     description: "Median answer delay"
     type: median
     value_format_name: decimal_1
@@ -320,6 +452,7 @@ view: conversations_parts {
   }
 
   measure: median_first_answer {
+    group_label: "Answer delay"
     description: "Median delay in first answer"
     type: median
     value_format_name: decimal_1
@@ -328,6 +461,7 @@ view: conversations_parts {
 
 
   measure: median_call {
+    group_label: "Call duration stats"
     description: "Median call duration"
     type: median
     value_format_name: decimal_1
@@ -335,6 +469,7 @@ view: conversations_parts {
   }
 
   measure: total_call_duration {
+    group_label: "Call duration stats"
     description: "Total call duration"
     type: sum
     value_format_name: decimal_0
@@ -342,13 +477,15 @@ view: conversations_parts {
   }
 
   measure: median_call_waiting {
-    description: "Median call duration"
+    group_label: "Call duration stats"
+    description: "Median call waiting"
     type: median
     value_format_name: decimal_1
     sql: ${waiting_duration} ;;
   }
 
   measure: median_SC_answer {
+    group_label: "Answer delay"
     description: "Median SC answer"
     type: median
     filters: {
