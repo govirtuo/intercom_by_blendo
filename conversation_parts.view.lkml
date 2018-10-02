@@ -69,6 +69,9 @@ view: conversations_parts {
             on ic1.conversation_id=ic4t.conversation_id and ic1.sequence_number=ic4t.sequence_number-3
           left join icfa
             on ic1.alt_id=icfa.alt_id ;;
+    indexes: ["id"]
+    sql_trigger_value: SELECT FLOOR((EXTRACT(epoch from NOW())-80*60)/(60*60*6)) ;;
+
     }
 
   dimension: id {
@@ -94,7 +97,7 @@ view: conversations_parts {
     description: "Sequence number"
     type: number
     sql: ${TABLE}.sequence_number ;;
-    hidden: no
+    hidden: yes
   }
 
   dimension: author_id {
@@ -128,7 +131,7 @@ view: conversations_parts {
 
 
   dimension: part_type {
-    description: "Part type, i.e Comment, Close, Note, Assignment"
+    description: "Part type, i.e Comment, Close, Note, Assignment or First"
     type: string
     sql: ${TABLE}.part_type ;;
   }
