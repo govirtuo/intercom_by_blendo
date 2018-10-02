@@ -49,6 +49,7 @@ view: conversations_parts {
           icfa as --first message of the conversation
               (select user_id || date(updated_at) as alt_id,
                       min(case when (author_type='admin' AND (part_type='comment' OR part_type='assignment') AND body is not null) OR (part_type='first' AND body like '%Outbout%') then updated_at else null end) as first_answer,
+                      --NBED: add first missed call and first message/callback after the missed call
                       min(case when body is not null and author_type='user' then updated_at else null end) as beginning
               from ic
               group by user_id, date(updated_at))
