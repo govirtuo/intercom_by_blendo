@@ -335,6 +335,13 @@ view: conversations_parts {
     sql: ${is_inbound_call} AND ${body}  like '%Infos générales%' ;;
   }
 
+  dimension: is_help_call {
+    group_label: "Type of call"
+    description: "Help call"
+    type: yesno
+    sql: ${is_inbound_call} AND ${body}  like '%Help%' ;;
+  }
+
   dimension: is_missed_call {
     group_label: "Type of call"
     description: "Missed call"
