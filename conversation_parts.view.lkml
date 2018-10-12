@@ -423,6 +423,13 @@ view: conversations_parts {
     # NB : un call en réponse apparaît dans une nouvelle conversation
   }
 
+  measure: count_missed_calls {
+    group_label: "Count calls"
+    type: count_distinct
+    sql: case when (${is_inbound_call} or ${is_outbound_call}) AND ${is_missed_call} then ${conversation_id} else null end ;;
+    # NB : un call en réponse apparaît dans une nouvelle conversation
+  }
+
 
   measure: count_SC_messages {
     type: count_distinct
