@@ -36,6 +36,16 @@ view: conversations_parts {
                       body,
                       ROW_NUMBER() OVER(PARTITION BY user_id, date(updated_at)  ORDER BY updated_at) as sequence_number
               from ic),
+          ic3 as -- same table, for penultimate messages
+              (select conversation_id,
+                      user_id || date(updated_at) as alt_id,
+                      id,
+                      author_type,
+                      updated_at,
+                      part_type,
+                      body,
+                      ROW_NUMBER() OVER(PARTITION BY user_id, date(updated_at)  ORDER BY updated_at) as sequence_number
+              from ic),
           ic4t as  -- same table, for the fourth message (useful in case of calls)
               (select conversation_id,
                       user_id || date(updated_at) as alt_id,
@@ -55,17 +65,22 @@ view: conversations_parts {
               group by user_id, date(updated_at))
           select ic1.*,
                   ic2.id as previous_message,
+                  ic3.id as penultimate_message,
                   ic2.body as previous_body,
+                  ic3.body as penultimate_body,
                   ic4t.id as fourth_message,
                   ic4t.updated_at as fourth_message_time,
                   ic2.updated_at as previous_message_time,
                   ic2.author_type as previous_author,
+                  ic3.author_type as penultimate_author,
                   icfa.first_answer, icfa.beginning,
                   ic4t.part_type as fourth_message_type,
                   ic4t.body as fourth_message_body
           from ic1
           left join ic2
             on ic1.conversation_id=ic2.conversation_id and ic1.sequence_number=ic2.sequence_number+1
+          left join ic3
+            on ic1.conversation_id=ic3.conversation_id and ic1.sequence_number=ic3.sequence_number+2
           left join ic4t
             on ic1.conversation_id=ic4t.conversation_id and ic1.sequence_number=ic4t.sequence_number-3
           left join icfa
@@ -86,7 +101,18 @@ view: conversations_parts {
     description: "Unique identifier of the previous conversation part"
     type: string
     sql: ${TABLE}.previous_message ;;
+    hidden: yes
   }
+
+
+  dimension: penultimate_id {
+    description: "Unique identifier of the penultimate conversation part"
+    type: string
+    sql: ${TABLE}.penultimate_message ;;
+    hidden: yes
+  }
+
+
 
   dimension: assigned_to_id {
     description: "Unique identifier of assignee"
@@ -130,6 +156,12 @@ view: conversations_parts {
     sql: ${TABLE}.previous_author ;;
   }
 
+  dimension: penultimate_author {
+    type: string
+    hidden: yes
+    sql: ${TABLE}.penultimate_author ;;
+  }
+
 
   dimension: part_type {
     description: "Part type, i.e Comment, Close, Note, Assignment or First"
@@ -147,7 +179,14 @@ view: conversations_parts {
     description: "Message body of the previous message"
     type: string
     sql: ${TABLE}.previous_body ;;
-    hidden: yes
+    hidden: no
+  }
+
+  dimension: penultimate_body {
+    description: "Message body of the penultimate message"
+    type: string
+    sql: ${TABLE}.penultimae_body ;;
+    hidden: no
   }
 
   dimension: conversation_id {
@@ -325,7 +364,23 @@ view: conversations_parts {
     group_label: "Type of call"
     description: "Inbound call"
     type: yesno
-    sql: ${part_type}='first' AND (${body} like '%Outbound call%' OR ${body} like '%Outbound answered call%' OR ${body} like '%Outbound unanswered call%') ;;
+    sql: --(${part_type}='first' AND
+        --    (${body} like '%Outbound call%' OR ${body} like '%Outbound answered call%' OR ${body} like '%Outbound unanswered call%')
+        --  )
+        --OR
+        ${part_type}='note'
+        AND ${body} like '%Made by%'
+        AND (
+              (${previous_body} like '%Outbound call%'
+              OR ${previous_body} like '%Outbound answered call%'
+              OR ${previous_body} like '%Outbound unanswered call%'
+              )
+            OR
+              (${penultimate_body} like '%Outbound call%'
+              OR ${penultimate_body} like '%Outbound answered call%'
+              OR ${penultimate_body} like '%Outbound unanswered call%'
+              )
+            );;
   }
 
   dimension: is_infoge_call {
@@ -360,7 +415,7 @@ view: conversations_parts {
     type: yesno
     sql: (${is_inbound_call} AND NOT ${is_missed_call})
           OR
-          (${is_outbound_call} AND NOT ${is_answered}) ;;
+          (${is_outbound_call} AND ${is_answered}) ;;
   }
 
   dimension: call_informations {
@@ -499,5 +554,18 @@ view: conversations_parts {
     value_format_name: decimal_1
     sql: ${delay} ;;
   }
+
+  measure: count_days {
+    group_label: "Count duration"
+    type: count_distinct
+    sql: date(${updated_date}) ;;
+  }
+
+  measure: count_weeks {
+    group_label: "Count duration"
+    type: count_distinct
+    sql: date(${updated_week}) ;;
+  }
+
 
 }

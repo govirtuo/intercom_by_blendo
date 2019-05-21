@@ -23,6 +23,12 @@ explore: conversations_parts {
     sql_on: ${conversations.user_id} = ${cont_ic_users.id} ;;
     relationship: many_to_one
   }
+  join: authors {
+    type: left_outer
+    sql_on: ${conversations_parts.author_id} = ${authors.id} ;;
+    relationship: many_to_one
+  }
+
   join: ticket_stats {
     type: left_outer
     sql_on:${ticket_stats.conversation_id}=${conversations.id}  ;;
