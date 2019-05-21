@@ -390,6 +390,13 @@ view: conversations_parts {
     sql: ${is_inbound_call} AND ${body}  like '%Infos générales%' ;;
   }
 
+  dimension: is_help_call {
+    group_label: "Type of call"
+    description: "Help call"
+    type: yesno
+    sql: ${is_inbound_call} AND ${body}  like '%Help%' ;;
+  }
+
   dimension: is_missed_call {
     group_label: "Type of call"
     description: "Missed call"
@@ -468,6 +475,13 @@ view: conversations_parts {
     group_label: "Count calls"
     type: count_distinct
     sql: case when ${is_inbound_call} or ${is_outbound_call} then ${conversation_id} else null end ;;
+    # NB : un call en réponse apparaît dans une nouvelle conversation
+  }
+
+  measure: count_missed_calls {
+    group_label: "Count calls"
+    type: count_distinct
+    sql: case when (${is_inbound_call} or ${is_outbound_call}) AND ${is_missed_call} then ${conversation_id} else null end ;;
     # NB : un call en réponse apparaît dans une nouvelle conversation
   }
 
