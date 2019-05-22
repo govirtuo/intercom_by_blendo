@@ -35,7 +35,7 @@ explore: conversations_parts {
   }
   join: tags {
     type: left_outer
-    sql_on: ${tags.id} = ${conversations.tags} ;;
+    sql_on: ${conversations.tags} like concat('%',${tags.id},'%') ;;
     #NBED review join so that all tags included in a conversation can be explored in the tags table
     # and not only the conversations with one tag only
     relationship: many_to_many
