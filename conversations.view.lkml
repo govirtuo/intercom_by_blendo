@@ -62,6 +62,7 @@ view: conversations {
       week,
       month,
       quarter,
+      day_of_week,
       year
     ]
     sql: ${TABLE}.created_at ;;
