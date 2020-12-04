@@ -6,17 +6,17 @@ view: conversations_parts {
             select
               id,
               received_at,
-              uuid_ts,
-              assignee_id as assigned_to_id,
-              assignee_type as assigned_to_type,
-              message_author_id as "author_id",
-              message_author_type as "author_type",
+              message_author_id as author_id,
               message_body as body,
-              id as "conversation_id",
               created_at,
+              created_at as updated_at,
               created_at as notified_at,
               'first' as part_type,
-              created_at as updated_at,
+              assignee_id as assigned_to_id,
+              assignee_type as assigned_to_type,
+              message_author_type as author_type,
+              id as conversation_id,
+              uuid_ts,
               user_id
             from intercom.conversations
           ),
@@ -60,7 +60,8 @@ view: conversations_parts {
                   ic4t.updated_at as fourth_message_time,
                   ic2.updated_at as previous_message_time,
                   ic2.author_type as previous_author,
-                  icfa.first_answer, icfa.beginning,
+                  icfa.first_answer,
+                  icfa.beginning,
                   ic4t.part_type as fourth_message_type,
                   ic4t.body as fourth_message_body
           from ic1
